@@ -1,0 +1,112 @@
+clc;
+clear all;
+close all;
+% 导入人脸图像集合
+k = 0;
+train_num = 5;
+for i=1:1:40
+    for j=1:1:train_num
+        filename  = sprintf('D:\\DataBase\\orl_faces\\s%d\\%d.pgm',i,j);
+        image_data = imread(filename);
+        k = k + 1;
+        x(:,k) = image_data(:); 
+        anot_name(k,:) = sprintf('%2d:%2d',i,j);
+    end
+end
+nImages = k;              %图像总共的数量
+imsize = size(image_data); %图像尺寸
+nPixels = imsize(1)*imsize(2);   %图像中的像素数
+x = double(x)/255;  %转换成双精度型并进行归一化处理
+%计算图像均值
+avrgx = mean(x')';
+for i=1:1:nImages
+    x(:,i) = x(:,i) - avrgx; 
+end
+cov_mat = x'*x; %计算协方差矩阵
+
+%奇异值分解
+[V,D] = eig(cov_mat);
+%奇异值分解公式
+%D：特征值构成的对角阵
+%V: 特征向量
+V = x*V*(abs(D))^-0.5;               
+KLCoef =  x'*V; %图像分解系数
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+t=0;
+% 读取测试集数据
+for i=1:1:40
+    for j= train_num+1:1:10
+        filename  = sprintf('D:\\DataBase\\orl_faces\\s%d\\%d.pgm',i,j);
+        test_image_data = imread(filename);
+        t = t + 1;
+        testDate(:,t) = test_image_data(:); 
+        test_name(t,:) = sprintf('%2d:%2d',i,j);
+    end
+end
+testImages = t;
+testDate = double(testDate)/255;  %转换成双精度型并进行归一化处理
+%计算图像均值
+avrgTest = mean(testDate')';
+for i=1:1:testImages
+    testDate(:,i) = testDate(:,i) - avrgTest; 
+end            
+KLCoef_Test =  testDate'*V; %图像分解系数
+
+right = 0;
+dist_comp_Test=zeros(testImages, testImages);
+for i=1:1:testImages
+    for j = 1:1:testImages
+    dist_comp_Test(i,j)=sqrt(dot(KLCoef_Test(i,:)-KLCoef(j,:),KLCoef_Test(i,:)-KLCoef(j,:)));
+    end
+    [sortedTest, sorted_index_Test] = sort(dist_comp_Test(i,:));
+    tem = strsplit(test_name(i,:), ':');
+    if((str2double(tem{1})) == fix((sorted_index_Test(1)/5))+1)
+           right = right+1;
+    end
+end
+disp('识别正确率为：');
+disp(right/testImages);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+[file,path] = uigetfile('*.pgm');
+if isequal(file,0)
+   disp('User selected Cancel');
+else
+   disp(['User selected ', fullfile(path,file)]);
+end
+imag = imread(fullfile(path,file));
+imag = imresize(imag, [112, 92]);
+temp(:, 1) = imag(:);
+temp = double(temp)/255;  %转换成双精度型并进行归一化处理
+
+%计算图像均值, 让待识别图像减去这个平均值
+temp(:,1) = temp(:,1) - avrgx;
+% 待识别的样本在新的空间上的投影
+KLCoefT =  temp'*V;
+
+% 查找相似图像
+fg1 = figure('numbertitle','off','name','准备进行识别的图像'); 
+%将要识别的图像展示出来
+imshow((reshape(avrgx+temp(:,1),imsize)));
+
+%计算该图像与其他所有图像的欧氏距离并储存
+for i=1:1:nImages
+    dist_comp(i)=sqrt(dot(KLCoefT(1,:)-KLCoef(i,:),KLCoefT(1,:)-KLCoef(i,:))); 
+    strDist(i) = cellstr(sprintf('%2.2f\n',dist_comp(i)));
+end
+
+%将图像的欧氏距离排序
+[sorted, sorted_index] = sort(dist_comp); 
+fg2 = figure('numbertitle','off','name','匹配到的人脸');
+position = 1;
+threshold = 30;
+if(sorted(sorted_index(1)) < threshold)
+    subplot(1,2,1);
+    imshow((reshape(avrgx+temp(:,1),imsize)));
+    title('原图像')
+    subplot(1,2,2); 
+    imshow((reshape(avrgx+x(:,sorted_index(1)),imsize)));
+     title(strDist(sorted_index(1)));
+    fprintf('经过识别，此人最可能为类别s%d', fix((sorted_index(1)/5))+1);
+else
+    fprintf('识别失败');
